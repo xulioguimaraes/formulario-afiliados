@@ -1,0 +1,66 @@
+EXEMPLO DE COMO SEU TEMPLATE .DOCX DEVE FICAR:
+
+==============================================
+
+Termos e Condições - GINGA BET
+
+QUADRO RESUMO
+
+PI – Adesão de Parceria Comercial para Influenciadores/Afiliados
+
+DADOS DO PARCEIRO
+Razão Social: {parceiroRazaoSocial}
+CNPJ/MF: {parceiroCnpj}
+Endereço: {parceiroEndereco}
+
+Dados do INFLUENCIADOR/AFILIADO
+Nome ou Razão Social: {nomeCompleto} / {razaoSocial}
+CPF/MF ou CNPJ/MF: {cpf} / {cnpj}
+Endereço: {enderecoCompleto}
+Bairro: {bairro}    CEP: {cep}    Cidade: {cidade}    Estado: {estado}
+
+Dados do CONTRATADO (AGÊNCIA):
+Razão Social: {razaoSocial}
+Endereço: {enderecoCompleto}
+Bairro: {bairro}    CEP: {cep}    Cidade: {cidade}    Estado: {estado}
+
+Dados BANCÁRIOS:
+Nome do Banco: {nomeBanco}
+Código do Banco: {codigoBanco}
+AG: {agencia}
+Conta: {conta}
+Chave Pix: {chavePix}
+Observação: É obrigatório que a conta corrente ora informada seja a mesma da emitente da Nota Fiscal - PESSOA JURÍDICA.
+
+Dados do OBJETO/AÇÃO: Exposição da MARCA "Ginga Bet" e da plataforma ginga.bet.br em ambiente virtual em páginas de Website, por meio de estratégias de tráfego pago e em redes sociais.
+
+Dados do PAGAMENTO (Valor):
+Vencimento: Em até 10 (dez) dias úteis após o recebimento da Nota Fiscal.
+Forma de pagamento: Transferência bancária para conta descrita no item 3., mediante apresentação da respectiva nota fiscal.
+
+Modelo de Contrato:
+CPA: {modeloContratoCpa}   REV: {modeloContratoRev}
+
+Informações adicionais:
+{informacoesAdicionais}
+
+[Resto do contrato conforme seu modelo original...]
+
+São Paulo, {dataAtual}.
+
+CONTRATADO –
+_________________________________
+
+INTERVENIENTE –
+_________________________________
+
+PARCEIRO - JOGO PRINCIPAL LTDA
+_________________________________
+
+==============================================
+
+INSTRUÇÕES:
+1. Copie seu contrato .docx atual
+2. Substitua os campos pelos placeholders mostrados acima
+3. Salve como "contrato_template.docx" na pasta public/templates/
+4. Teste preenchendo o formulário
