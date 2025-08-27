@@ -88,6 +88,8 @@ const opcoesContratoRev = [
 
 export default function FormularioAfiliados() {
   const [etapaAtual, setEtapaAtual] = useState<1 | 2>(1);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
 
   const {
     register,
@@ -116,14 +118,14 @@ export default function FormularioAfiliados() {
     setEtapaAtual(1);
   };
 
-  const gerarContratoDocx = async (data: FormData) => {
+  const gerarDocumento = async (data: FormData, nomeTemplate: string, sufixoArquivo: string) => {
     try {
       // Buscar o template .docx
-      const response = await fetch("/templates/contrato_template.docx");
+      const response = await fetch(`/templates/${nomeTemplate}`);
 
       if (!response.ok) {
         throw new Error(
-          "Template não encontrado. Certifique-se de que o arquivo contrato_template.docx está na pasta public/templates/"
+          `Template ${nomeTemplate} não encontrado. Certifique-se de que o arquivo está na pasta public/templates/`
         );
       }
 
@@ -193,7 +195,7 @@ export default function FormularioAfiliados() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `contrato_afiliado_${data.primeiroNome}_${
+      link.download = `${sufixoArquivo}_${data.primeiroNome}_${
         data.sobrenome
       }_${new Date().toISOString().split("T")[0]}.docx`;
       document.body.appendChild(link);
@@ -201,16 +203,53 @@ export default function FormularioAfiliados() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      console.log("Contrato gerado com sucesso!");
+      console.log(`${sufixoArquivo} gerado com sucesso!`);
     } catch (error) {
-      console.error("Erro ao gerar contrato:", error);
-      alert("Erro ao gerar contrato. Verifique se o template está disponível.");
+      console.error(`Erro ao gerar ${sufixoArquivo}:`, error);
+      alert(`Erro ao gerar ${sufixoArquivo}. Verifique se o template está disponível.`);
     }
   };
 
-  const onSubmit: SubmitHandler<FormData> = (data) => {
+  const gerarTodosDocumentos = async (data: FormData) => {
+    setIsGenerating(true);
+    
+    try {
+      // Gerar o primeiro documento - Termos e Condições
+      setLoadingMessage("Gerando Termos e Condições...");
+      console.log("Gerando primeiro documento...");
+      await gerarDocumento(data, "termo_e_condicoes.docx", "termo_e_condicoes");
+      
+      // Aguardar um pouco para não sobrecarregar
+      setLoadingMessage("Preparando Contrato de Afiliação...");
+      console.log("Aguardando para gerar segundo documento...");
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Gerar o segundo documento - Contrato
+      setLoadingMessage("Gerando Contrato de Afiliação...");
+      console.log("Gerando segundo documento...");
+      await gerarDocumento(data, "contrato_afiliado.docx", "contrato_afiliado");
+      
+      // Finalizar
+      setLoadingMessage("Documentos gerados com sucesso!");
+      console.log("Todos os documentos foram gerados!");
+      
+      // Aguardar um pouco antes de remover o loading
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+    } catch (error) {
+      console.error("Erro ao gerar documentos:", error);
+      setLoadingMessage("Erro ao gerar documentos. Tente novamente.");
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    } finally {
+      setIsGenerating(false);
+      setLoadingMessage("");
+    }
+  };
+
+  const onSubmit: SubmitHandler<FormData> = async (data) => {
     console.log("Dados do formulário:", data);
-    gerarContratoDocx(data);
+    console.log("Iniciando geração de documentos...");
+    await gerarTodosDocumentos(data);
   };
 
   return (
@@ -788,9 +827,21 @@ export default function FormularioAfiliados() {
                   </button>
                   <button
                     type="submit"
-                    className="px-8 py-3 bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] text-white font-semibold rounded-lg hover:from-[#ffb800] hover:to-[#ff8500] transition duration-200 shadow-lg hover:shadow-xl outline-none focus:ring-2 focus:ring-[#ffc22a]"
+                    disabled={isGenerating}
+                    className={`px-8 py-3 font-semibold rounded-lg transition duration-200 shadow-lg hover:shadow-xl outline-none focus:ring-2 focus:ring-[#ffc22a] ${
+                      isGenerating
+                        ? "bg-gray-600 cursor-not-allowed"
+                        : "bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] text-white hover:from-[#ffb800] hover:to-[#ff8500]"
+                    }`}
                   >
-                    Enviar
+                    {isGenerating ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        <span>Gerando...</span>
+                      </div>
+                    ) : (
+                      "Enviar"
+                    )}
                   </button>
                 </div>
               </div>
@@ -798,6 +849,24 @@ export default function FormularioAfiliados() {
           </form>
         </div>
       </div>
+
+      {/* Modal de Loading */}
+      {isGenerating && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#ffc22a] mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+              Gerando Documentos
+            </h3>
+            <p className="text-gray-600">
+              {loadingMessage}
+            </p>
+            <div className="mt-4 text-sm text-gray-500">
+              Por favor, aguarde. Não feche esta página.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
