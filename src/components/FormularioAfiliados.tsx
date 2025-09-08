@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { useForm, SubmitHandler } from "react-hook-form";
-import { createReport } from "docx-templates";
 import AssinaturaDigital from "./AssinaturaDigital";
+import { createReport } from "docx-templates";
+import {
+  processTemplate,
+  prepareTemplateData,
+} from "../utils/templateProcessor";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // Tipos para os dados do formulário
 interface DadosPessoais {
@@ -92,9 +98,16 @@ export default function FormularioAfiliados() {
   const [etapaAtual, setEtapaAtual] = useState<1 | 2>(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
-  const [assinaturaDigital, setAssinaturaDigital] = useState<string | null>(
-    null
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [formData, setFormData] = useState<FormData | null>(null);
+  const [activeAccordion, setActiveAccordion] = useState<"termos" | "contrato">(
+    "termos"
   );
+  const [termosContent, setTermosContent] = useState<string>("");
+  const [contratoContent, setContratoContent] = useState<string>("");
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [currentSignature, setCurrentSignature] = useState<string | null>(null);
 
   const {
     register,
@@ -123,15 +136,145 @@ export default function FormularioAfiliados() {
     setEtapaAtual(1);
   };
 
-  const gerarDocumento = async (
+  const gerarConteudoTermos = (data: FormData) => {
+    return `
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">TERMOS E CONDIÇÕES</h1>
+        <h2 style="font-size: 16px; font-weight: bold; color: #666;">PROGRAMA DE AFILIADOS</h2>
+      </div>
+      
+      <div style="margin-bottom: 20px;">
+        <p><strong>Data:</strong> ${new Date().toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })}</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">DADOS DO AFILIADO</h3>
+        <p><strong>Nome Completo:</strong> ${data.primeiroNome} ${
+      data.sobrenome
+    }</p>
+        <p><strong>CPF:</strong> ${data.cpf}</p>
+        <p><strong>E-mail:</strong> ${data.email}</p>
+        <p><strong>Telefone:</strong> ${data.codigoPais} ${data.telefone}</p>
+        <p><strong>Razão Social:</strong> ${data.razaoSocial}</p>
+        <p><strong>CNPJ:</strong> ${data.cnpj}</p>
+        <p><strong>Endereço:</strong> ${data.enderecoCompleto}, ${
+      data.bairro
+    }, ${data.cidade} - ${data.estado}, CEP: ${data.cep}</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">DADOS BANCÁRIOS</h3>
+        <p><strong>Banco:</strong> ${data.nomeBanco} (${data.codigoBanco})</p>
+        <p><strong>Agência:</strong> ${data.agencia}</p>
+        <p><strong>Conta:</strong> ${data.conta}</p>
+        <p><strong>PIX:</strong> ${data.chavePix || "Não informada"}</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">TERMOS E CONDIÇÕES</h3>
+        <p>1. O afiliado concorda em cumprir todas as diretrizes do programa de afiliados.</p>
+        <p>2. O afiliado é responsável por manter a confidencialidade de suas credenciais.</p>
+        <p>3. O afiliado concorda em não divulgar informações confidenciais da empresa.</p>
+        <p>4. O afiliado deve seguir todas as leis e regulamentações aplicáveis.</p>
+        <p>5. A empresa se reserva o direito de encerrar o contrato a qualquer momento.</p>
+      </div>
+
+      <div style="margin-top: 40px;">
+        <p><strong>Assinatura Digital:</strong></p>
+        ${
+          data.assinaturaDigital
+            ? `<img src="${data.assinaturaDigital}" style="max-width: 200px; max-height: 80px; border: 1px solid #ccc;" />`
+            : '<p style="color: red;">Assinatura não encontrada</p>'
+        }
+      </div>
+    `;
+  };
+
+  const gerarConteudoContrato = (data: FormData) => {
+    return `
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">CONTRATO DE AFILIAÇÃO</h1>
+        <h2 style="font-size: 16px; font-weight: bold; color: #666;">PROGRAMA DE AFILIADOS</h2>
+      </div>
+      
+      <div style="margin-bottom: 20px;">
+        <p><strong>Data:</strong> ${new Date().toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+        })}</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">PARTES CONTRATANTES</h3>
+        <p><strong>CONTRATANTE:</strong> JOGO PRINCIPAL LTDA</p>
+        <p><strong>CNPJ:</strong> 56.302.709/0001-04</p>
+        <p><strong>Endereço:</strong> Avenida Paulista, nº 1636, sala 1504, Bela Vista – SP, CEP 01.310-200</p>
+        <br>
+        <p><strong>CONTRATADO:</strong> ${data.razaoSocial}</p>
+        <p><strong>CNPJ:</strong> ${data.cnpj}</p>
+        <p><strong>Representante:</strong> ${data.primeiroNome} ${
+      data.sobrenome
+    }</p>
+        <p><strong>CPF:</strong> ${data.cpf}</p>
+        <p><strong>Endereço:</strong> ${data.enderecoCompleto}, ${
+      data.bairro
+    }, ${data.cidade} - ${data.estado}, CEP: ${data.cep}</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">CONDIÇÕES COMERCIAIS</h3>
+        <p><strong>Modelo CPA:</strong> ${data.modeloContratoCpa}</p>
+        <p><strong>Modelo REV:</strong> ${data.modeloContratoRev}</p>
+        <p><strong>Dados Bancários:</strong> ${data.nomeBanco} (${
+      data.codigoBanco
+    }) - Ag: ${data.agencia} - CC: ${data.conta}</p>
+        <p><strong>PIX:</strong> ${data.chavePix || "Não informada"}</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">CLÁUSULAS DO CONTRATO</h3>
+        <p>1. O contratado se compromete a promover os produtos/serviços da contratante.</p>
+        <p>2. A remuneração será paga conforme modelo ${
+          data.modeloContratoCpa
+        } para CPA e ${data.modeloContratoRev} para REV.</p>
+        <p>3. O pagamento será realizado mensalmente via transferência bancária.</p>
+        <p>4. O contrato tem vigência de 12 meses, renovável automaticamente.</p>
+        <p>5. Qualquer das partes pode rescindir o contrato com 30 dias de antecedência.</p>
+      </div>
+
+      ${
+        data.informacoesAdicionais
+          ? `
+        <div style="margin-bottom: 20px;">
+          <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">INFORMAÇÕES ADICIONAIS</h3>
+          <p>${data.informacoesAdicionais}</p>
+        </div>
+      `
+          : ""
+      }
+
+      <div style="margin-top: 40px;">
+        <p><strong>Assinatura Digital:</strong></p>
+        ${
+          data.assinaturaDigital
+            ? `<img src="${data.assinaturaDigital}" style="max-width: 200px; max-height: 80px; border: 1px solid #ccc;" />`
+            : '<p style="color: red;">Assinatura não encontrada</p>'
+        }
+      </div>
+    `;
+  };
+
+  const baixarTemplateDOCX = async (
     data: FormData,
     nomeTemplate: string,
     sufixoArquivo: string
   ) => {
     try {
-      console.log(`🔍 Gerando documento: ${nomeTemplate}`);
-      console.log(`📝 Assinatura presente:`, !!data.assinaturaDigital);
-      
       // Buscar o template .docx
       const response = await fetch(`/templates/${nomeTemplate}`);
 
@@ -202,21 +345,18 @@ export default function FormularioAfiliados() {
         additionalJsContext: {
           assinaturaDigital: () => {
             if (!data.assinaturaDigital) {
-              console.log("❌ Nenhuma assinatura disponível");
               return null;
             }
-            
-            const base64Data = data.assinaturaDigital.includes(',') 
-              ? data.assinaturaDigital.split(',')[1] 
+
+            const base64Data = data.assinaturaDigital.includes(",")
+              ? data.assinaturaDigital.split(",")[1]
               : data.assinaturaDigital;
-            
-            console.log(`✅ Assinatura processada via IMAGE command, tamanho base64:`, base64Data.length);
-            
+
             return {
               width: 6, // Largura em cm
               height: 2, // Altura em cm
               data: base64Data,
-              extension: '.png',
+              extension: ".png",
             };
           },
         },
@@ -238,37 +378,166 @@ export default function FormularioAfiliados() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      console.log(`${sufixoArquivo} gerado com sucesso!`);
+      // Retornar o blob para conversão para PDF
+      return blob;
     } catch (error) {
-      console.error(`Erro ao gerar ${sufixoArquivo}:`, error);
+      console.error(`Erro ao baixar ${sufixoArquivo}:`, error);
       alert(
-        `Erro ao gerar ${sufixoArquivo}. Verifique se o template está disponível.`
+        `Erro ao baixar ${sufixoArquivo}. Verifique se o template está disponível.`
       );
+      return null;
     }
   };
 
-  const gerarTodosDocumentos = async (data: FormData) => {
+  const converterDOCXParaPDF = async (
+    data: FormData,
+    tipoDocumento: "termos" | "contrato",
+    sufixoArquivo: string
+  ) => {
+    try {
+      // Usar o conteúdo HTML já processado dos templates
+      const conteudoHTML =
+        tipoDocumento === "termos" ? termosContent : contratoContent;
+
+      if (!conteudoHTML) {
+        throw new Error("Conteúdo HTML não disponível para conversão");
+      }
+
+      // Criar um elemento temporário para renderizar o documento
+      const tempDiv = document.createElement("div");
+      tempDiv.style.position = "absolute";
+      tempDiv.style.left = "-9999px";
+      tempDiv.style.top = "-9999px";
+      tempDiv.style.width = "210mm"; // A4 width
+      tempDiv.style.padding = "20mm";
+      tempDiv.style.fontFamily = "Arial, sans-serif";
+      tempDiv.style.fontSize = "12px";
+      tempDiv.style.lineHeight = "1.4";
+      tempDiv.style.backgroundColor = "white";
+      tempDiv.style.color = "black";
+      tempDiv.style.minHeight = "297mm"; // A4 height
+
+      // Adicionar estilos CSS para preservar formatação
+      const style = document.createElement("style");
+      style.textContent = `
+        .docx-content {
+          font-family: 'Times New Roman', serif;
+          line-height: 1.5;
+          color: black;
+        }
+        .docx-content h1, .docx-content h2, .docx-content h3 {
+          font-weight: bold;
+          margin: 10px 0;
+        }
+        .docx-content p {
+          margin: 5px 0;
+        }
+        .docx-content strong {
+          font-weight: bold;
+        }
+        .docx-content table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 10px 0;
+        }
+        .docx-content td, .docx-content th {
+          border: 1px solid #ccc;
+          padding: 5px;
+        }
+      `;
+      document.head.appendChild(style);
+
+      tempDiv.className = "docx-content";
+      tempDiv.innerHTML = conteudoHTML;
+      document.body.appendChild(tempDiv);
+
+      // Aguardar um pouco para garantir que o conteúdo seja renderizado
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Gerar PDF usando html2canvas e jsPDF
+      const canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        width: tempDiv.scrollWidth,
+        height: tempDiv.scrollHeight,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      // Fazer download do PDF
+      const nomeArquivo = `${sufixoArquivo}_${data.primeiroNome}_${
+        data.sobrenome
+      }_${new Date().toISOString().split("T")[0]}.pdf`;
+      pdf.save(nomeArquivo);
+
+      // Limpar elementos temporários
+      document.body.removeChild(tempDiv);
+      document.head.removeChild(style);
+    } catch (error) {
+      console.error(`Erro ao converter ${tipoDocumento} para PDF:`, error);
+      alert(`Erro ao converter ${tipoDocumento} para PDF. Tente novamente.`);
+    }
+  };
+
+  const baixarTodosDocumentos = async (data: FormData) => {
     setIsGenerating(true);
 
     try {
-      // Gerar o primeiro documento - Termos e Condições
-      setLoadingMessage("Gerando Termos e Condições...");
-      console.log("Gerando primeiro documento...");
-      await gerarDocumento(data, "termo_e_condicoes.docx", "termo_e_condicoes");
+      // Baixar o primeiro documento - Termos e Condições (DOCX)
+      setLoadingMessage("Baixando Termos e Condições (DOCX)...");
+
+      await baixarTemplateDOCX(
+        data,
+        "termo_e_condicoes.docx",
+        "termo_e_condicoes"
+      );
+
+      // Converter para PDF
+      setLoadingMessage("Convertendo Termos e Condições para PDF...");
+
+      await converterDOCXParaPDF(data, "termos", "termo_e_condicoes");
 
       // Aguardar um pouco para não sobrecarregar
       setLoadingMessage("Preparando Contrato de Afiliação...");
-      console.log("Aguardando para gerar segundo documento...");
+
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Gerar o segundo documento - Contrato
-      setLoadingMessage("Gerando Contrato de Afiliação...");
-      console.log("Gerando segundo documento...");
-      await gerarDocumento(data, "contrato_afiliado.docx", "contrato_afiliado");
+      // Baixar o segundo documento - Contrato (DOCX)
+      setLoadingMessage("Baixando Contrato de Afiliação (DOCX)...");
+
+      await baixarTemplateDOCX(
+        data,
+        "contrato_afiliado.docx",
+        "contrato_afiliado"
+      );
+
+      // Converter para PDF
+      setLoadingMessage("Convertendo Contrato de Afiliação para PDF...");
+
+      await converterDOCXParaPDF(data, "contrato", "contrato_afiliado");
 
       // Finalizar
-      setLoadingMessage("Documentos gerados com sucesso!");
-      console.log("Todos os documentos foram gerados!");
+      setLoadingMessage("Todos os documentos foram gerados com sucesso!");
 
       // Aguardar um pouco antes de remover o loading
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -282,16 +551,57 @@ export default function FormularioAfiliados() {
     }
   };
 
+  const loadTemplates = async (data: FormData) => {
+    setIsLoadingTemplates(true);
+    try {
+      const templateData = prepareTemplateData(
+        data as unknown as Record<string, unknown>
+      );
+
+      // Processar ambos os templates
+      const [termos, contrato] = await Promise.all([
+        processTemplate("/templates/termo_e_condicoes.docx", templateData),
+        processTemplate("/templates/contrato_afiliado.docx", templateData),
+      ]);
+
+      setTermosContent(termos);
+      setContratoContent(contrato);
+    } catch (error) {
+      console.error("Erro ao carregar templates:", error);
+      // Fallback para conteúdo estático em caso de erro
+      setTermosContent(gerarConteudoTermos(data));
+      setContratoContent(gerarConteudoContrato(data));
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
   const onSubmit: SubmitHandler<FormData> = async (data) => {
-    // Adicionar a assinatura digital aos dados
+    setFormData(data);
+    setShowTemplatesModal(true);
+    await loadTemplates(data);
+  };
+
+  const handleAcceptTemplates = () => {
+    setShowTemplatesModal(false);
+    setShowSignatureModal(true);
+  };
+
+  const handleSignatureChange = (signature: string | null) => {
+    setCurrentSignature(signature);
+  };
+
+  const handleConfirmSignature = async () => {
+    if (!currentSignature || !formData) return;
+
+    setShowSignatureModal(false);
+
     const dataComAssinatura = {
-      ...data,
-      assinaturaDigital: assinaturaDigital,
+      ...formData,
+      assinaturaDigital: currentSignature,
     };
 
-    console.log("Dados do formulário:", dataComAssinatura);
-    console.log("Iniciando geração de documentos...");
-    await gerarTodosDocumentos(dataComAssinatura);
+    await baixarTodosDocumentos(dataComAssinatura);
   };
 
   return (
@@ -859,26 +1169,6 @@ export default function FormularioAfiliados() {
                   </div>
                 </div>
 
-                <div className="border-t pt-6">
-                  <h3 className="text-lg font-medium text-gray-100 mb-4">
-                    Assinatura Digital
-                  </h3>
-                  <div className="bg-white rounded-lg p-4">
-                    <AssinaturaDigital
-                      onSignatureChange={setAssinaturaDigital}
-                    />
-                  </div>
-                </div>
-
-                {!assinaturaDigital && (
-                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                    <p className="text-sm">
-                      <strong>Atenção:</strong> É necessário assinar
-                      digitalmente antes de enviar o formulário.
-                    </p>
-                  </div>
-                )}
-
                 <div className="flex justify-between pt-6">
                   <button
                     type="button"
@@ -889,9 +1179,9 @@ export default function FormularioAfiliados() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isGenerating || !assinaturaDigital}
+                    disabled={isGenerating}
                     className={`px-8 py-3 font-semibold rounded-lg transition duration-200 shadow-lg hover:shadow-xl outline-none focus:ring-2 focus:ring-[#ffc22a] ${
-                      isGenerating || !assinaturaDigital
+                      isGenerating
                         ? "bg-gray-600 cursor-not-allowed"
                         : "bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] text-white hover:from-[#ffb800] hover:to-[#ff8500]"
                     }`}
@@ -902,7 +1192,7 @@ export default function FormularioAfiliados() {
                         <span>Gerando...</span>
                       </div>
                     ) : (
-                      "Enviar"
+                      "Continuar"
                     )}
                   </button>
                 </div>
@@ -911,6 +1201,155 @@ export default function FormularioAfiliados() {
           </form>
         </div>
       </div>
+
+      {/* Modal de Templates */}
+      {showTemplatesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] px-6 py-4">
+              <h2 className="text-xl font-bold text-white text-center">
+                Documentos para Assinatura
+              </h2>
+              <p className="text-orange-100 text-center mt-1">
+                Revise os documentos antes de assinar
+              </p>
+            </div>
+
+            <div className="p-6">
+              {/* Acordeon */}
+              <div className="space-y-4">
+                {/* Termos e Condições */}
+                <div className="border border-gray-300 rounded-lg">
+                  <button
+                    onClick={() => setActiveAccordion("termos")}
+                    className={`w-full px-6 py-4 text-left font-semibold flex items-center justify-between transition-colors ${
+                      activeAccordion === "termos"
+                        ? "bg-[#ffc22a] text-white"
+                        : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                    }`}
+                  >
+                    <span>Termos e Condições</span>
+                    <span
+                      className={`transform transition-transform ${
+                        activeAccordion === "termos" ? "rotate-180" : ""
+                      }`}
+                    >
+                      ▼
+                    </span>
+                  </button>
+
+                  {activeAccordion === "termos" && (
+                    <div className="p-6 bg-white max-h-96 overflow-y-auto">
+                      {isLoadingTemplates ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ffc22a] mr-3"></div>
+                          <span className="text-gray-600">
+                            Carregando documento...
+                          </span>
+                        </div>
+                      ) : (
+                        <div
+                          className="max-w-none text-black prose prose-sm"
+                          dangerouslySetInnerHTML={{ __html: termosContent }}
+                          style={{ color: "black" }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Contrato de Afiliação */}
+                <div className="border border-gray-300 rounded-lg">
+                  <button
+                    onClick={() => setActiveAccordion("contrato")}
+                    className={`w-full px-6 py-4 text-left font-semibold flex items-center justify-between transition-colors ${
+                      activeAccordion === "contrato"
+                        ? "bg-[#ffc22a] text-white"
+                        : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                    }`}
+                  >
+                    <span>Contrato de Afiliação</span>
+                    <span
+                      className={`transform transition-transform ${
+                        activeAccordion === "contrato" ? "rotate-180" : ""
+                      }`}
+                    >
+                      ▼
+                    </span>
+                  </button>
+
+                  {activeAccordion === "contrato" && (
+                    <div className="p-6 bg-white max-h-96 overflow-y-auto">
+                      {isLoadingTemplates ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ffc22a] mr-3"></div>
+                          <span className="text-gray-600">
+                            Carregando documento...
+                          </span>
+                        </div>
+                      ) : (
+                        <div
+                          className="max-w-none text-black prose prose-sm"
+                          dangerouslySetInnerHTML={{ __html: contratoContent }}
+                          style={{ color: "black" }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Botões */}
+              <div className="flex justify-between mt-6">
+                <button
+                  onClick={() => setShowTemplatesModal(false)}
+                  className="px-6 py-3 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition duration-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAcceptTemplates}
+                  className="px-6 py-3 bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] text-white font-semibold rounded-lg hover:from-[#ffb800] hover:to-[#ff8500] transition duration-200"
+                >
+                  Aceitar e Assinar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Assinatura */}
+      {showSignatureModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            <div className="bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] px-6 py-4">
+              <h2 className="text-xl font-bold text-white text-center">
+                Assinatura Digital
+              </h2>
+              <p className="text-orange-100 text-center mt-1">
+                Assine digitalmente para finalizar o processo
+              </p>
+            </div>
+
+            <div className="p-6">
+              <AssinaturaDigital
+                onSignatureChange={handleSignatureChange}
+                onConfirmSignature={handleConfirmSignature}
+              />
+
+              <div className="flex justify-between mt-6">
+                <button
+                  onClick={() => setShowSignatureModal(false)}
+                  className="px-6 py-3 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition duration-200"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Loading */}
       {isGenerating && (

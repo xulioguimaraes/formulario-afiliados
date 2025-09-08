@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "docx-templates": "^4.14.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.2",
+    "mammoth": "^1.10.0",
     "next": "15.5.2",
+    "puppeteer": "^24.19.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.62.0",

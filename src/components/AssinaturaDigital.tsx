@@ -5,9 +5,10 @@ import SignatureCanvas from "react-signature-canvas";
 
 interface AssinaturaDigitalProps {
   onSignatureChange: (signatureData: string | null) => void;
+  onConfirmSignature?: () => void;
 }
 
-export default function AssinaturaDigital({ onSignatureChange }: AssinaturaDigitalProps) {
+export default function AssinaturaDigital({ onSignatureChange, onConfirmSignature }: AssinaturaDigitalProps) {
   const signatureRef = useRef<SignatureCanvas>(null);
   const [isEmpty, setIsEmpty] = useState(true);
 
@@ -69,11 +70,23 @@ export default function AssinaturaDigital({ onSignatureChange }: AssinaturaDigit
             Limpar
           </button>
           
-          <div className="text-sm text-gray-600">
-            {isEmpty ? (
-              <span className="text-red-500">Assinatura obrigatória</span>
-            ) : (
-              <span className="text-green-600">✓ Assinatura capturada</span>
+          <div className="flex items-center space-x-4">
+            <div className="text-sm text-gray-600">
+              {isEmpty ? (
+                <span className="text-red-500">Assinatura obrigatória</span>
+              ) : (
+                <span className="text-green-600">✓ Assinatura capturada</span>
+              )}
+            </div>
+            
+            {!isEmpty && onConfirmSignature && (
+              <button
+                type="button"
+                onClick={onConfirmSignature}
+                className="px-6 py-2 text-sm bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] text-white font-semibold rounded-lg hover:from-[#ffb800] hover:to-[#ff8500] transition duration-200"
+              >
+                Confirmar Assinatura
+              </button>
             )}
           </div>
         </div>
