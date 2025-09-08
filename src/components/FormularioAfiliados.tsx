@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useForm, SubmitHandler } from "react-hook-form";
 import { createReport } from "docx-templates";
+import AssinaturaDigital from "./AssinaturaDigital";
 
 // Tipos para os dados do formulário
 interface DadosPessoais {
@@ -32,6 +33,7 @@ interface DadosEmpresa {
   modeloContratoCpa: string;
   modeloContratoRev: string;
   informacoesAdicionais: string;
+  assinaturaDigital: string | null;
 }
 
 type FormData = DadosPessoais & DadosEmpresa;
@@ -90,6 +92,9 @@ export default function FormularioAfiliados() {
   const [etapaAtual, setEtapaAtual] = useState<1 | 2>(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [assinaturaDigital, setAssinaturaDigital] = useState<string | null>(
+    null
+  );
 
   const {
     register,
@@ -118,8 +123,15 @@ export default function FormularioAfiliados() {
     setEtapaAtual(1);
   };
 
-  const gerarDocumento = async (data: FormData, nomeTemplate: string, sufixoArquivo: string) => {
+  const gerarDocumento = async (
+    data: FormData,
+    nomeTemplate: string,
+    sufixoArquivo: string
+  ) => {
     try {
+      console.log(`🔍 Gerando documento: ${nomeTemplate}`);
+      console.log(`📝 Assinatura presente:`, !!data.assinaturaDigital);
+      
       // Buscar o template .docx
       const response = await fetch(`/templates/${nomeTemplate}`);
 
@@ -178,6 +190,8 @@ export default function FormularioAfiliados() {
         parceiroCnpj: "56.302.709/0001-04",
         parceiroEndereco:
           "Avenida Paulista, nº 1636, sala 1504, Bela Vista – SP, CEP 01.310-200",
+
+        // Assinatura digital será processada via additionalJsContext
       };
 
       // Gerar o documento preenchido
@@ -185,6 +199,27 @@ export default function FormularioAfiliados() {
         template: new Uint8Array(templateBuffer),
         data: dadosContrato,
         cmdDelimiter: ["{", "}"], // Usar chaves para os placeholders
+        additionalJsContext: {
+          assinaturaDigital: () => {
+            if (!data.assinaturaDigital) {
+              console.log("❌ Nenhuma assinatura disponível");
+              return null;
+            }
+            
+            const base64Data = data.assinaturaDigital.includes(',') 
+              ? data.assinaturaDigital.split(',')[1] 
+              : data.assinaturaDigital;
+            
+            console.log(`✅ Assinatura processada via IMAGE command, tamanho base64:`, base64Data.length);
+            
+            return {
+              width: 6, // Largura em cm
+              height: 2, // Altura em cm
+              data: base64Data,
+              extension: '.png',
+            };
+          },
+        },
       });
 
       // Criar blob e fazer download
@@ -206,40 +241,41 @@ export default function FormularioAfiliados() {
       console.log(`${sufixoArquivo} gerado com sucesso!`);
     } catch (error) {
       console.error(`Erro ao gerar ${sufixoArquivo}:`, error);
-      alert(`Erro ao gerar ${sufixoArquivo}. Verifique se o template está disponível.`);
+      alert(
+        `Erro ao gerar ${sufixoArquivo}. Verifique se o template está disponível.`
+      );
     }
   };
 
   const gerarTodosDocumentos = async (data: FormData) => {
     setIsGenerating(true);
-    
+
     try {
       // Gerar o primeiro documento - Termos e Condições
       setLoadingMessage("Gerando Termos e Condições...");
       console.log("Gerando primeiro documento...");
       await gerarDocumento(data, "termo_e_condicoes.docx", "termo_e_condicoes");
-      
+
       // Aguardar um pouco para não sobrecarregar
       setLoadingMessage("Preparando Contrato de Afiliação...");
       console.log("Aguardando para gerar segundo documento...");
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
       // Gerar o segundo documento - Contrato
       setLoadingMessage("Gerando Contrato de Afiliação...");
       console.log("Gerando segundo documento...");
       await gerarDocumento(data, "contrato_afiliado.docx", "contrato_afiliado");
-      
+
       // Finalizar
       setLoadingMessage("Documentos gerados com sucesso!");
       console.log("Todos os documentos foram gerados!");
-      
+
       // Aguardar um pouco antes de remover o loading
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       console.error("Erro ao gerar documentos:", error);
       setLoadingMessage("Erro ao gerar documentos. Tente novamente.");
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     } finally {
       setIsGenerating(false);
       setLoadingMessage("");
@@ -247,9 +283,15 @@ export default function FormularioAfiliados() {
   };
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
-    console.log("Dados do formulário:", data);
+    // Adicionar a assinatura digital aos dados
+    const dataComAssinatura = {
+      ...data,
+      assinaturaDigital: assinaturaDigital,
+    };
+
+    console.log("Dados do formulário:", dataComAssinatura);
     console.log("Iniciando geração de documentos...");
-    await gerarTodosDocumentos(data);
+    await gerarTodosDocumentos(dataComAssinatura);
   };
 
   return (
@@ -817,6 +859,26 @@ export default function FormularioAfiliados() {
                   </div>
                 </div>
 
+                <div className="border-t pt-6">
+                  <h3 className="text-lg font-medium text-gray-100 mb-4">
+                    Assinatura Digital
+                  </h3>
+                  <div className="bg-white rounded-lg p-4">
+                    <AssinaturaDigital
+                      onSignatureChange={setAssinaturaDigital}
+                    />
+                  </div>
+                </div>
+
+                {!assinaturaDigital && (
+                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    <p className="text-sm">
+                      <strong>Atenção:</strong> É necessário assinar
+                      digitalmente antes de enviar o formulário.
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex justify-between pt-6">
                   <button
                     type="button"
@@ -827,9 +889,9 @@ export default function FormularioAfiliados() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isGenerating}
+                    disabled={isGenerating || !assinaturaDigital}
                     className={`px-8 py-3 font-semibold rounded-lg transition duration-200 shadow-lg hover:shadow-xl outline-none focus:ring-2 focus:ring-[#ffc22a] ${
-                      isGenerating
+                      isGenerating || !assinaturaDigital
                         ? "bg-gray-600 cursor-not-allowed"
                         : "bg-gradient-to-b from-[#ffc22a] to-[#ff9d00] text-white hover:from-[#ffb800] hover:to-[#ff8500]"
                     }`}
@@ -858,9 +920,7 @@ export default function FormularioAfiliados() {
             <h3 className="text-lg font-semibold text-gray-800 mb-2">
               Gerando Documentos
             </h3>
-            <p className="text-gray-600">
-              {loadingMessage}
-            </p>
+            <p className="text-gray-600">{loadingMessage}</p>
             <div className="mt-4 text-sm text-gray-500">
               Por favor, aguarde. Não feche esta página.
             </div>
